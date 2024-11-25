@@ -231,6 +231,7 @@ Contributions to **Chandra** are highly encouraged. Please feel free to submit i
 - <a href="https://github.com/tinyBigGAMES/Chandra/issues" target="_blank">Issues</a>
 - <a href="https://github.com/tinyBigGAMES/Chandra/discussions" target="_blank">Discussions</a>
 - <a href="https://learndelphi.org/" target="_blank">Learn Delphi</a>
+- <a href="https://www.lua.org/start.html" target="_blank">Learn Lua</a>
 ---
 For any professional Delphi developer interested in enhancing application flexibility with scripting capabilities, Chandra offers a tested and reliable solution that keeps everything self-contained and performant. 🚀
 
