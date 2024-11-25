@@ -79,3 +79,8 @@ __recovery/
 
 # Boss dependency manager vendor folder https://github.com/HashLoad/boss
 modules/
+
+# Chandra
+!src/Chandra.o
+*.dsv
+bin/res/scripts/*_bundle.lua
