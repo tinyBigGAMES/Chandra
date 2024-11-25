@@ -601,7 +601,7 @@ begin
 
       /// <summary>
       /// Demonstrates setting a Lua global variable using `SetVariable` and retrieving its value using `GetVariable`.
-      /// This example assigns the value 3.14 to the global variable `test_var` and retrieves it as a Delphi extended type.
+      /// This example assigns the value 502 to the global variable `test_var` and retrieves it as a Delphi extended type.
       /// </summary>
       LChandra.SetVariable('test_var', 502);
       LChandra.PrintLn('test_var: "%3.2f"', [LChandra.GetVariable('test_var').AsExtended]);
@@ -644,12 +644,6 @@ begin
         /// </summary>
         LStream.Free();
       end;
-
-      /// <summary>
-      /// Loads compiled Lua bytecode from a memory stream into LChandra for execution.
-      /// This second call may be unnecessary if the bytecode is already loaded above.
-      /// </summary>
-      LChandra.LoadBuffer(LStream.Memory, LStream.Size);
 
     except
       on E: Exception do
