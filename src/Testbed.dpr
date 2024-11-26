@@ -189,8 +189,9 @@ program Testbed;
 {$R *.res}
 
 uses
-  SysUtils,
-  Classes,
+  System.SysUtils,
+  System.Classes,
+  System.IOUtils,
   Chandra in 'Chandra.pas';
 
 type
@@ -538,6 +539,34 @@ begin
   try
     try
       /// <summary>
+      /// Executes the stored Lua payload and exits the current procedure if successful.
+      /// </summary>
+      /// <remarks>
+      /// This line attempts to execute the stored Lua payload using the `RunPayload` method of the
+      /// `TChandra` object. If the payload execution succeeds (i.e., `RunPayload` returns <c>True</c>),
+      /// the program will exit the current procedure or function early using the `Exit` statement.
+      /// </remarks>
+      /// <example>
+      /// <code>
+      /// if LChandra.RunPayload() then
+      ///   Exit;
+      /// </code>
+      /// </example>
+      /// <para>
+      /// Usage Context:
+      /// </para>
+      /// - Ensure that the payload (Lua bytecode) has been successfully compiled and stored using
+      ///   the `StorePayload` method before calling `RunPayload`.
+      /// - Consider checking for payload existence using `PayloadExist` before attempting to run it.
+      /// </remarks>
+      /// <exception>
+      /// If no payload exists or if an error occurs during execution, `RunPayload` will return <c>False</c>,
+      /// and the procedure will continue executing subsequent lines.
+      /// </exception>
+      if LChandra.RunPayload() then
+        Exit;
+
+      /// <summary>
       /// Add search paths for Lua modules
       /// </summary>
       LChandra.AddSearchPath('.\res\scripts');
@@ -624,6 +653,22 @@ begin
       LChandra.AddSearchPath('.\res\scripts');
 
       /// <summary>
+      /// Copy Testbed.exe to Payload.exe, compile script file to bytecode and
+      /// store in Payload.exe. Now when you run Poyload.exe it will check for
+      /// a payload and execute it.
+      /// </summary>
+      TFile.Copy('Testbed.exe', 'Payload.exe', True);
+      if LChandra.StorePayload('.\res\scripts\compiled.lua', 'Payload.exe') then
+        LChandra.PrintLn('Saved bytecode to "Payload.exe"', [])
+      else
+        LChandra.PrintLn('Failed to save bytecode to "Payload.exe"', []);
+
+      /// <summary>
+      /// Resets the LChandra environment, clearing all previously loaded scripts and variables.
+      /// </summary>
+      LChandra.Reset();
+
+      /// <summary>
       /// Creates a memory stream to hold the compiled Lua bytecode.
       /// </summary>
       LStream := TMemoryStream.Create();
@@ -637,7 +682,6 @@ begin
         /// Loads compiled Lua bytecode from a memory stream into LChandra for execution.
         /// </summary>
         LChandra.LoadBuffer(LStream.Memory, LStream.Size);
-
       finally
         /// <summary>
         /// Frees the memory stream to release resources.

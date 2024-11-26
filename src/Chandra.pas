@@ -617,8 +617,126 @@ type
     /// </code>
     /// </example>
     procedure PrintLn(const AText: string; const AArgs: array of const);
-  end;
 
+    /// <summary>
+    /// Checks if a Lua payload (compiled bytecode) is currently stored and available for execution.
+    /// </summary>
+    /// <returns>
+    /// <c>True</c> if a compiled Lua payload exists; otherwise, <c>False</c>.
+    /// </returns>
+    /// <remarks>
+    /// This method verifies the presence of a previously stored Lua payload (compiled bytecode),
+    /// ensuring that it can be executed or accessed. Use this method to conditionally execute or
+    /// manage Lua payload operations.
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// if PayloadExist() then
+    ///   WriteLn('Lua payload is ready.')
+    /// else
+    ///   WriteLn('No Lua payload found.');
+    /// </code>
+    /// </example>
+    function PayloadExist(): Boolean;
+
+    /// <summary>
+    /// Compiles a Lua source file into bytecode and stores it as a payload embedded in the specified executable file.
+    /// </summary>
+    /// <param name="ASourceFilename">
+    /// The source Lua file (.lua) containing the script to be compiled into bytecode.
+    /// </param>
+    /// <param name="AEXEFilename">
+    /// The target executable file where the compiled Lua bytecode will be embedded as a payload.
+    /// </param>
+    /// <returns>
+    /// <c>True</c> if the Lua payload was successfully compiled and stored; otherwise, <c>False</c>.
+    /// </returns>
+    /// <remarks>
+    /// This method compiles the Lua source file specified by <paramref name="ASourceFilename"/>
+    /// into bytecode and embeds it as a payload in the executable file specified by
+    /// <paramref name="AEXEFilename"/>. Ensure that both file paths are valid and accessible
+    /// before calling this method. A failed operation may indicate permission issues, invalid file
+    /// formats, or errors during Lua compilation.
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// if StorePayload('script.lua', 'app.exe') then
+    ///   WriteLn('Lua payload successfully stored.')
+    /// else
+    ///   WriteLn('Failed to store Lua payload.');
+    /// </code>
+    /// </example>
+    function StorePayload(const ASourceFilename, AEXEFilename: string): Boolean;
+
+    /// <summary>
+    /// Executes the stored Lua payload (compiled bytecode), if available.
+    /// </summary>
+    /// <returns>
+    /// <c>True</c> if the Lua payload was successfully executed; otherwise, <c>False</c>.
+    /// </returns>
+    /// <remarks>
+    /// This method attempts to execute the previously stored Lua payload (compiled bytecode).
+    /// Before calling this method, ensure that <see cref="PayloadExist"/> returns <c>True</c>.
+    /// A failed execution may indicate issues with the stored Lua bytecode, runtime errors, or
+    /// lack of permissions.
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// if PayloadExist() then
+    /// begin
+    ///   if RunPayload() then
+    ///     WriteLn('Lua payload executed successfully.')
+    ///   else
+    ///     WriteLn('Failed to execute Lua payload.');
+    /// end
+    /// else
+    ///   WriteLn('No Lua payload available.');
+    /// </code>
+    /// </example>
+    function RunPayload(): Boolean;
+
+    /// <summary>
+    /// Event triggered before the reset operation is performed.
+    /// </summary>
+    /// <remarks>
+    /// This method is a virtual placeholder designed to be overridden in descendant classes. It allows for
+    /// custom pre-reset logic to be implemented. For example, you might use this to clean up resources,
+    /// save state, or log information before a reset occurs.
+    ///
+    /// The base implementation does nothing, providing flexibility for descendants to define their specific behavior.
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// procedure TMyClass.OnBeforeReset();
+    /// begin
+    ///   // Custom logic before reset
+    ///   WriteLn('Performing cleanup before reset...');
+    /// end;
+    /// </code>
+    /// </example>
+    procedure OnBeforeReset(); virtual;
+
+    /// <summary>
+    /// Event triggered after the reset operation is completed.
+    /// </summary>
+    /// <remarks>
+    /// This method is a virtual placeholder designed to be overridden in descendant classes. It allows for
+    /// custom post-reset logic to be implemented. For example, you might use this to reinitialize resources,
+    /// notify other components, or log that the reset has been completed.
+    ///
+    /// The base implementation does nothing, providing flexibility for descendants to define their specific behavior.
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// procedure TMyClass.OnAfterReset();
+    /// begin
+    ///   // Custom logic after reset
+    ///   WriteLn('Reinitialization completed after reset.');
+    /// end;
+    /// </code>
+    /// </example>
+    procedure OnAfterReset(); virtual;
+  end;
 
 {$ENDREGION}
 
@@ -701,6 +819,78 @@ procedure BinToCode();
 begin
   TFile.WriteAllText('debugger.lua.txt', TextToDelphiArray(TFile.ReadAllText('debugger.lua')));
 end;
+
+function IsValidWin64PE(const AFilePath: string): Boolean;
+var
+  LFile: TFileStream;
+  LDosHeader: TImageDosHeader;
+  LPEHeaderOffset: DWORD;
+  LPEHeaderSignature: DWORD;
+  LFileHeader: TImageFileHeader;
+begin
+  Result := False;
+
+  if not FileExists(AFilePath) then
+    Exit;
+
+  LFile := TFileStream.Create(AFilePath, fmOpenRead or fmShareDenyWrite);
+  try
+    // Check if file is large enough for DOS header
+    if LFile.Size < SizeOf(TImageDosHeader) then
+      Exit;
+
+    // Read DOS header
+    LFile.ReadBuffer(LDosHeader, SizeOf(TImageDosHeader));
+
+    // Check DOS signature
+    if LDosHeader.e_magic <> IMAGE_DOS_SIGNATURE then // 'MZ'
+      Exit;
+
+      // Validate PE header offset
+    LPEHeaderOffset := LDosHeader._lfanew;
+    if LFile.Size < LPEHeaderOffset + SizeOf(DWORD) + SizeOf(TImageFileHeader) then
+      Exit;
+
+    // Seek to the PE header
+    LFile.Position := LPEHeaderOffset;
+
+    // Read and validate the PE signature
+    LFile.ReadBuffer(LPEHeaderSignature, SizeOf(DWORD));
+    if LPEHeaderSignature <> IMAGE_NT_SIGNATURE then // 'PE\0\0'
+      Exit;
+
+   // Read the file header
+    LFile.ReadBuffer(LFileHeader, SizeOf(TImageFileHeader));
+
+    // Check if it is a 64-bit executable
+    if LFileHeader.Machine <> IMAGE_FILE_MACHINE_AMD64 then   Exit;
+
+    // If all checks pass, it's a valid Win64 PE file
+    Result := True;
+  finally
+    LFile.Free;
+  end;
+end;
+
+function AddResFromMemory(const aModuleFile: string; const aName: string; aData: Pointer; aSize: Cardinal): Boolean;
+var
+  LHandle: THandle;
+begin
+  Result := False;
+  if not TFile.Exists(aModuleFile) then Exit;
+  LHandle := WinApi.Windows.BeginUpdateResourceW(PWideChar(aModuleFile), False);
+  if LHandle <> 0 then
+  begin
+    WinApi.Windows.UpdateResourceW(LHandle, RT_RCDATA, PChar(aName), 1033 {ENGLISH, ENGLISH_US}, aData, aSize);
+    Result := WinApi.Windows.EndUpdateResourceW(LHandle, False);
+  end;
+end;
+
+function ResourceExists(aInstance: THandle; const aResName: string): Boolean;
+begin
+  Result := Boolean((FindResource(aInstance, PChar(aResName), RT_RCDATA) <> 0));
+end;
+
 
 {$ENDREGION}
 
@@ -2317,8 +2507,10 @@ end;
 
 procedure TChandra.Reset();
 begin
+  OnBeforeReset();
   Close();
   Open();
+  OnAfterReset();
 end;
 
 procedure TChandra.ValidateMethod(const AMethod: TRttiMethod);
@@ -3108,6 +3300,94 @@ begin
   if not HasConsoleOutput() then Exit;
   WriteLn(Format(AText, AArgs));
 end;
+
+const
+  PAYLOADID = 'fa12d33b4ed84bc6a6dc4c2fd07a31e8';
+
+function TChandra.PayloadExist(): Boolean;
+begin
+  Result := False;
+  if not Assigned(FState) then Exit;
+
+  Result := ResourceExists(HInstance, PAYLOADID);
+end;
+
+function TChandra.StorePayload(const ASourceFilename, AEXEFilename: string): Boolean;
+var
+  LStream: TMemoryStream;
+begin
+  Result := False;
+  if not Assigned(FState) then Exit;
+
+  if not TFile.Exists(ASourceFilename) then Exit;
+  if not TFile.Exists(AEXEFilename) then Exit;
+  if not IsValidWin64PE(AEXEFilename) then Exit;
+
+  LStream := TMemoryStream.Create();
+  try
+    CompileToStream(ASourceFilename, LStream, True);
+    if LStream.Size > 0 then
+    begin
+      Result := AddResFromMemory(AEXEFilename, PAYLOADID, LStream.Memory, LStream.Size);
+    end;
+  finally
+    LStream.Free();
+  end;
+end;
+
+function TChandra.RunPayload(): Boolean;
+var
+  LResStream: TResourceStream;
+  LErr: string;
+  LRes: Integer;
+begin
+  Result := False;
+  if not Assigned(FState) then Exit;
+
+  if not PayloadExist() then Exit;
+
+  Reset();
+
+  LResStream := TResourceStream.Create(HInstance, PAYLOADID, RT_RCDATA);
+  try
+    LoadBuffer(LResStream.Memory, LResStream.Size, False);
+    LResStream.Free();
+    LResStream := nil;
+  finally
+    if Assigned(LResStream) then
+      LResStream.Free();
+  end;
+
+  // Check if the stack has any values
+  if lua_gettop(FState) = 0 then
+    raise EChandraException.Create('Lua stack is empty. Nothing to run.');
+
+  // Check if the top of the stack is a function
+  if lua_type(FState, lua_gettop(FState)) <> LUA_TFUNCTION then
+    raise EChandraException.Create('Top of the stack is not a callable function.');
+
+  // Call the function on the stack
+  LRes := lua_pcall(FState, 0, LUA_MULTRET, 0);
+
+  // Handle errors from pcall
+  if LRes <> LUA_OK then
+  begin
+    LErr := lua_tostring(FState, -1);
+    lua_pop(FState, 1);
+    raise EChandraException.Create(LErr);
+  end;
+
+  Result := True;
+end;
+
+procedure TChandra.OnBeforeReset();
+begin
+end;
+
+procedure TChandra.OnAfterReset();
+begin
+end;
+
 
 {$ENDREGION}
 
