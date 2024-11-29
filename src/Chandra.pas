@@ -745,6 +745,9 @@ implementation
 {$L Chandra.o}
 
 {$REGION ' COMMON '}
+var
+  Marshaller: TMarshaller;
+
 function EnableVirtualTerminalProcessing(): DWORD;
 var
   HOut: THandle;
@@ -891,6 +894,82 @@ begin
   Result := Boolean((FindResource(aInstance, PChar(aResName), RT_RCDATA) <> 0));
 end;
 
+function RemoveBOM(const AString: string): string; overload;
+const
+  UTF8BOM: array[0..2] of Byte = ($EF, $BB, $BF);
+var
+  LBytes: TBytes;
+begin
+  // Convert the input string to a byte array
+  LBytes := TEncoding.UTF8.GetBytes(AString);
+
+  // Check for UTF-8 BOM at the beginning
+  if (Length(LBytes) >= 3) and
+     (LBytes[0] = UTF8BOM[0]) and
+     (LBytes[1] = UTF8BOM[1]) and
+     (LBytes[2] = UTF8BOM[2]) then
+  begin
+    // Remove the BOM by copying the bytes after it
+    Result := TEncoding.UTF8.GetString(LBytes, 3, Length(LBytes) - 3);
+  end
+  else
+  begin
+    // Return the original string if no BOM is detected
+    Result := AString;
+  end;
+end;
+
+function RemoveBOM(const ABytes: TBytes): TBytes; overload;
+const
+  UTF8BOM: array[0..2] of Byte = ($EF, $BB, $BF);
+  UTF16LEBOM: array[0..1] of Byte = ($FF, $FE);
+  UTF16BEBOM: array[0..1] of Byte = ($FE, $FF);
+var
+  LStartIndex: Integer;
+begin
+  Result := ABytes;
+
+  // Check for UTF-8 BOM
+  if (Length(ABytes) >= 3) and
+     (ABytes[0] = UTF8BOM[0]) and
+     (ABytes[1] = UTF8BOM[1]) and
+     (ABytes[2] = UTF8BOM[2]) then
+  begin
+    LStartIndex := 3; // Skip the UTF-8 BOM
+  end
+  // Check for UTF-16 LE BOM
+  else if (Length(ABytes) >= 2) and
+          (ABytes[0] = UTF16LEBOM[0]) and
+          (ABytes[1] = UTF16LEBOM[1]) then
+  begin
+    LStartIndex := 2; // Skip the UTF-16 LE BOM
+  end
+  // Check for UTF-16 BE BOM
+  else if (Length(ABytes) >= 2) and
+          (ABytes[0] = UTF16BEBOM[0]) and
+          (ABytes[1] = UTF16BEBOM[1]) then
+  begin
+    LStartIndex := 2; // Skip the UTF-16 BE BOM
+  end
+  else
+  begin
+    Exit; // No BOM found, return the original array
+  end;
+
+  // Create a new array without the BOM
+  Result := Copy(ABytes, LStartIndex, Length(ABytes) - LStartIndex);
+end;
+
+function AsUTF8(const AText: string; const ARemoveBOM: Boolean=False): Pointer;
+var
+  LText: string;
+begin
+  if ARemoveBOM then
+    LText := RemoveBOM(AText)
+  else
+    LText := AText;
+  Result := Marshaller.AsUtf8(LText).ToPointer;
+end;
 
 {$ENDREGION}
 
@@ -1327,7 +1406,6 @@ function luaL_loadfile(L: Pointer; const F: PAnsiChar): Integer;
 begin
   Result := luaL_loadfilex(L, F, nil);
 end;
-
 
 function luaL_dofile(aState: Pointer; aFilename: PAnsiChar): Integer;
 Var
@@ -2239,7 +2317,7 @@ begin
       end;
     tkString, tkUString:
       begin
-        lua_pushstring(AState, PAnsiChar(AnsiString(AValue.AsString)));
+        lua_pushstring(AState, AsUTF8(AValue.AsString));
         Result := 1;
       end;
     tkEnumeration:
@@ -2260,7 +2338,7 @@ begin
             LUserData := lua_newuserdata(AState, SizeOf(TObject));
             TObject(LUserData^) := LObj;
 
-            if luaL_newmetatable(AState, PAnsiChar(AnsiString(LObj.ClassName))) <> 0 then
+            if luaL_newmetatable(AState, AsUTF8(LObj.ClassName)) <> 0 then
             begin
               lua_pushstring(AState, '__gc');
               lua_pushcclosure(AState, @LuaObjectGC, 0);
@@ -2295,7 +2373,8 @@ begin
         // Copy the record data
         Move(AValue.GetReferenceToRawData^, LUserData^, LRecordSize);
         // Add a metatable with the record type name
-        if luaL_newmetatable(AState, PAnsiChar(AnsiString(AValue.TypeInfo.Name))) <> 0 then
+        if luaL_newmetatable(AState, AsUTF8(string(AValue.TypeInfo.Name))) <> 0 then
+        //if luaL_newmetatable(AState, PAnsiChar(AnsiString(AValue.TypeInfo.Name))) <> 0 then
         begin
           // Set up metatable if needed
           lua_pushstring(AState, '__gc');
@@ -2355,7 +2434,7 @@ begin
               if LUserData <> nil then
               begin
                 // First check if it's a pointer to a pointer (regular pointer case)
-                if luaL_getmetatable(AState, PAnsiChar(AnsiString(AParamType.Name))) = 1 then
+                if luaL_getmetatable(AState, AsUTF8(AParamType.Name)) = 1 then
                 begin
                   lua_pop(AState, 1);  // Pop metatable
                   Result := TValue.From<Pointer>(LUserData);
@@ -2442,13 +2521,14 @@ begin
   except
     on E: Exception do
     begin
-      lua_pushstring(AState, PAnsiChar(AnsiString(E.Message)));
+      lua_pushstring(AState, AsUTF8(E.Message));
       lua_error(AState);
       Result := 0;
     end;
   end;
 end;
 
+{ TChandra }
 constructor TChandra.Create();
 begin
   inherited;
@@ -2562,7 +2642,7 @@ begin
       lua_pushnumber(FState, AValue.AsExtended);
 
     tkString, tkUString, tkLString:
-      lua_pushstring(FState, PAnsiChar(AnsiString(AValue.AsString)));
+      lua_pushstring(FState, AsUTF8(AValue.AsString));
 
     tkEnumeration:
       if LTypeInfo = TypeInfo(Boolean) then
@@ -2578,7 +2658,7 @@ begin
           LUserData := lua_newuserdata(FState, SizeOf(TObject));
           TObject(LUserData^) := LObj;
 
-          if luaL_newmetatable(FState, PAnsiChar(AnsiString(LObj.ClassName))) <> 0 then
+          if luaL_newmetatable(FState, AsUTF8(LObj.ClassName)) <> 0 then
           begin
             lua_pushstring(FState, '__gc');
             lua_pushcclosure(FState, @LuaObjectGC, 0);
@@ -2706,7 +2786,7 @@ begin
 
           // Store the pointer in the "pointers" table
           lua_pushlightuserdata(FState, AValue.VPointer); // Push the pointer as userdata
-          lua_setfield(FState, -2, PAnsiChar(AnsiString(LPointerID))); // pointers[_p<address>] = userdata
+          lua_setfield(FState, -2, AsUTF8(LPointerID)); // pointers[_p<address>] = userdata
           lua_pop(FState, 1); // Pop the "pointers" table
 
           // Return the identifier to use in the Lua script
@@ -2733,7 +2813,7 @@ begin
 
   lua_pushlightuserdata(FState, LWrapperPtr);
   lua_pushcclosure(FState, @LuaMethodCallback, 1);
-  lua_setfield(FState, -2, PAnsiChar(AnsiString(AMethod.Name)));
+  lua_setfield(FState, -2, AsUTF8(AMethod.Name));
 end;
 
 function TChandra.PushPointer(const APtr: Pointer; const ATypeInfo: PTypeInfo = nil): Boolean;
@@ -2755,7 +2835,7 @@ begin
   // If we know the type, create a metatable for it
   if ATypeInfo <> nil then
   begin
-    if luaL_newmetatable(FState, PAnsiChar(AnsiString(ATypeInfo.Name))) <> 0 then
+    if luaL_newmetatable(FState, AsUTF8(string(ATypeInfo.Name))) <> 0 then
     begin
       // Could add type-specific metamethods here if needed
       lua_pushstring(FState, '__gc');
@@ -2860,8 +2940,8 @@ begin
   LOutFilename := AOutFilename.Replace('\', '/');
   LoadBuffer(@cLUABUNDLE_LUA, Length(cLUABUNDLE_LUA), False);
 
-  lua_pushstring(FState, PAnsiChar(AnsiString(AInFilename)));
-  lua_pushstring(FState, PAnsiChar(AnsiString(AOutFilename)));
+  lua_pushstring(FState, AsUTF8(AInFilename));
+  lua_pushstring(FState, AsUTF8(AOutFilename));
 
   LStatus := lua_pcall(FState, 2, 0, 0);
   CheckLuaError(LStatus);
@@ -2892,9 +2972,10 @@ begin
     if (LMethod.Visibility = mvPublished) and LMethod.IsClassMethod then
       RegisterMethod(LMethod, AClass);
 
-  lua_setglobal(FState, PAnsiChar(AnsiString(LActualTableName)));
+  lua_setglobal(FState, AsUTF8(LActualTableName));
 end;
 
+(*
 function TChandra.LoadFile(const AFilename: string; const AAutoRun: Boolean): Boolean;
 var
   LMarshall: TMarshaller;
@@ -2919,10 +3000,45 @@ begin
 
   Result := True;
 end;
+*)
+
+function TChandra.LoadFile(const AFilename: string; const AAutoRun: Boolean): Boolean;
+var
+  LFileContent: TBytes;
+  LErr: string;
+  LRes: Integer;
+begin
+  Result := False;
+  if not Assigned(FState) then Exit;
+  if AFilename.IsEmpty then Exit;
+  if not TFile.Exists(AFilename) then Exit;
+
+  // Read the file content and remove the BOM
+  LFileContent := RemoveBOM(TFile.ReadAllBytes(AFilename));
+
+  // Load or execute the script
+  LRes := luaL_loadbuffer(FState, AsUTF8(TEncoding.UTF8.GetString(LFileContent)), Length(LFileContent), AsUtf8(AFilename));
+
+  if LRes <> 0 then
+  begin
+    LErr := lua_tostring(FState, -1);
+    lua_pop(FState, 1);
+    raise EChandraException.CreateFmt('%s: %s', [AFilename, LErr]);
+  end;
+
+  // Execute the script if AAutoRun is True
+  if AAutoRun and (lua_pcall(FState, 0, LUA_MULTRET, 0) <> 0) then
+  begin
+    LErr := lua_tostring(FState, -1);
+    lua_pop(FState, 1);
+    raise EChandraException.CreateFmt('%s: %s', [AFilename, LErr]);
+  end;
+
+  Result := True;
+end;
 
 procedure TChandra.LoadString(const AData: string; const AAutoRun: Boolean);
 var
-  LMarshall: TMarshaller;
   LErr: string;
   LRes: Integer;
   LData: string;
@@ -2933,9 +3049,9 @@ begin
   if LData.IsEmpty then Exit;
 
   if AAutoRun then
-    LRes := luaL_dostring(FState, LMarshall.AsAnsi(LData).ToPointer)
+    LRes := luaL_dostring(FState, AsUTF8(LData, True))
   else
-    LRes := luaL_loadstring(FState, LMarshall.AsAnsi(LData).ToPointer);
+    LRes := luaL_loadstring(FState, AsUTF8(LData, True));
 
   if LRes <> 0 then
   begin
@@ -2980,7 +3096,7 @@ var
   LStatus: Integer;
 begin
   // Attempt to load the name as a Lua expression
-  LStatus := luaL_loadstring(FState, PAnsiChar(AnsiString('return ' + AName)));
+  LStatus := luaL_loadstring(FState, AsUTF8('return ' + AName));
 
   if LStatus = LUA_OK then
   begin
@@ -3010,7 +3126,7 @@ begin
     Exit; // Invalid input
 
   // Get the base variable
-  lua_getglobal(FState, PAnsiChar(AnsiString(LTokens[0])));
+  lua_getglobal(FState, AsUTF8(LTokens[0]));
 
   for I := 1 to High(LTokens) do
   begin
@@ -3021,7 +3137,7 @@ begin
     end;
 
     // Navigate to the next field
-    lua_getfield(FState, -1, PAnsiChar(AnsiString(LTokens[I])));
+    lua_getfield(FState, -1, AsUTF8(LTokens[I]));
     lua_remove(FState, -2); // Remove the parent table
   end;
 
@@ -3045,25 +3161,25 @@ begin
     raise EChandraRuntimeException.Create('Invalid variable name');
 
   // Get or create the base variable
-  LType := lua_getglobal(FState, PAnsiChar(AnsiString(LTokens[0]))); // Push base variable onto the stack
+  LType := lua_getglobal(FState, AsUTF8(LTokens[0])); // Push base variable onto the stack
   if LType = LUA_TNIL then
   begin
     // Base variable does not exist; create a new table
     lua_pop(FState, 1); // Remove nil
     lua_newtable(FState); // Create a new table
-    lua_setglobal(FState, PAnsiChar(AnsiString(LTokens[0]))); // Assign the table globally
-    lua_getglobal(FState, PAnsiChar(AnsiString(LTokens[0]))); // Push the new table onto the stack
+    lua_setglobal(FState, AsUTF8(LTokens[0])); // Assign the table globally
+    lua_getglobal(FState, AsUTF8(LTokens[0])); // Push the new table onto the stack
 
     // Navigate through the nested fields
     for I := 1 to High(LTokens) - 1 do
     begin
-      lua_getfield(FState, -1, PAnsiChar(AnsiString(LTokens[I]))); // Get the next field
+      lua_getfield(FState, -1, AsUTF8(LTokens[I])); // Get the next field
       if lua_type(FState, -1) = LUA_TNIL then
       begin
         lua_pop(FState, 1); // Remove nil
         lua_newtable(FState); // Create a new table
         lua_pushvalue(FState, -1); // Duplicate the new table
-        lua_setfield(FState, -3, PAnsiChar(AnsiString(LTokens[I]))); // Assign the new table to the parent
+        lua_setfield(FState, -3, AsUTF8(LTokens[I])); // Assign the new table to the parent
       end;
       lua_remove(FState, -2); // Remove the parent table
     end;
@@ -3077,7 +3193,7 @@ begin
 
     // Set the final field
     LFinalKey := LTokens[High(LTokens)];
-    lua_setfield(FState, -2, PAnsiChar(AnsiString(LFinalKey))); // Assign the value to the field
+    lua_setfield(FState, -2, AsUTF8(LFinalKey)); // Assign the value to the field
     lua_pop(FState, 1); // Remove the remaining table
   end
   else
@@ -3091,20 +3207,20 @@ begin
         lua_pop(FState, 1); // Clean up the stack
         raise EChandraRuntimeException.CreateFmt('Unsupported value for "%s"', [AName]);
       end;
-      lua_setglobal(FState, PAnsiChar(AnsiString(AName))); // Set the global variable
+      lua_setglobal(FState, AsUTF8(AName)); // Set the global variable
     end
     else
     begin
       // If it's a table, navigate and handle nested fields (same logic as for nil)
       for I := 1 to High(LTokens) - 1 do
       begin
-        lua_getfield(FState, -1, PAnsiChar(AnsiString(LTokens[I]))); // Get the next field
+        lua_getfield(FState, -1, AsUTF8(LTokens[I])); // Get the next field
         if lua_type(FState, -1) = LUA_TNIL then
         begin
           lua_pop(FState, 1); // Remove nil
           lua_newtable(FState); // Create a new table
           lua_pushvalue(FState, -1); // Duplicate the new table
-          lua_setfield(FState, -3, PAnsiChar(AnsiString(LTokens[I]))); // Assign the new table to the parent
+          lua_setfield(FState, -3, AsUTF8(LTokens[I])); // Assign the new table to the parent
         end;
         lua_remove(FState, -2); // Remove the parent table
       end;
@@ -3118,7 +3234,7 @@ begin
 
       // Set the final field
       LFinalKey := LTokens[High(LTokens)];
-      lua_setfield(FState, -2, PAnsiChar(AnsiString(LFinalKey))); // Assign the value to the field
+      lua_setfield(FState, -2, AsUTF8(LFinalKey)); // Assign the value to the field
       lua_pop(FState, 1); // Remove the remaining table
     end;
   end;
@@ -3138,7 +3254,7 @@ begin
   LScript := Format('return %s', [AName]);
 
   // Load the script
-  LStatus := luaL_loadstring(FState, PAnsiChar(AnsiString(LScript)));
+  LStatus := luaL_loadstring(FState, AsUTF8(LScript));
   if LStatus <> LUA_OK then
     raise EChandraRuntimeException.CreateFmt('Invalid variable name "%s": %s', [AName, lua_tostring(FState, -1)]);
 
@@ -3171,7 +3287,7 @@ begin
   Result := TValue.Empty;
 
   // Check if the function or construct exists
-  lua_getglobal(FState, PAnsiChar(AnsiString(AName)));
+  lua_getglobal(FState, AsUTF8(AName));
   LType := lua_type(FState, -1);
   if not LType in [LUA_TFUNCTION, LUA_TTABLE, LUA_TUSERDATA, LUA_TNIL] then
   begin
@@ -3194,7 +3310,7 @@ begin
   LScript := Format('return %s(%s)', [AName, LParamStr]);
 
   // Load the script
-  LStatus := luaL_loadstring(FState, PAnsiChar(AnsiString(LScript)));
+  LStatus := luaL_loadstring(FState, AsUTF8(LScript));
   if LStatus <> LUA_OK then
   begin
     // Retrieve and raise the Lua error
@@ -3282,7 +3398,7 @@ begin
     LCurrentPath := LPathToAdd + ';' + LCurrentPath;
 
     // Update package.path
-    lua_pushstring(FState, PAnsiChar(AnsiString(LCurrentPath))); // Push the updated path
+    lua_pushstring(FState, AsUTF8(LCurrentPath)); // Push the updated path
     lua_setfield(FState, -2, 'path'); // Update "package.path"
   end;
 

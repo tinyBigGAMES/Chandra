@@ -189,6 +189,7 @@ program Testbed;
 {$R *.res}
 
 uses
+  WinApi.Windows,
   System.SysUtils,
   System.Classes,
   System.IOUtils,
@@ -688,6 +689,16 @@ begin
         /// </summary>
         LStream.Free();
       end;
+
+      /// <summary>
+      /// Resets the LChandra environment, clearing all previously loaded scripts and variables.
+      /// </summary>
+      LChandra.Reset();
+
+      /// <summary>
+      /// Load a script from the filesystem and automatically execute it
+      /// </summary>
+      LChandra.LoadFile('.\res\scripts\compiled.lua');
 
     except
       on E: Exception do
