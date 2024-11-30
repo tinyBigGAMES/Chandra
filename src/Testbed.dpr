@@ -142,7 +142,7 @@
 Chandra Usage Notes:
 ====================
  1. Integrated Lua Version
-    Chandra uses Lua 5.4.7, which is statically compiled into the Delphi
+    Chandra uses Lua 5.4.7+, which is statically compiled into the Delphi
     application.
     - There are no external DLL dependencies to manage, ensuring portability
        and simplicity.
@@ -175,7 +175,13 @@ Chandra Usage Notes:
         - If the pointer was dynamically allocated, it must be released on the
           Delphi side.
 
-  5. Prerequisites
+  5. Script commands/variables:
+     - Chandra.version   - Chandra version (string)
+     - Chandra.luaVerion - Lua version (string)
+     - dbg()             - Place in your Lua source to invokes the interactive
+                           debugger
+
+  6. Prerequisites
      - Delphi 12.2 or higher
      - Windows 10 or higher
      - Tested on Windows 11 64-bit (23H2), Delphi 12.2
