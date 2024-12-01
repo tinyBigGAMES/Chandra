@@ -50,7 +50,7 @@
     Chandra uses Lua 5.4.7+, which is statically compiled into the Delphi
     application.
     - There are no external DLL dependencies to manage, ensuring portability
-       and simplicity.
+      and simplicity.
 
  2. Automatic Registration of Delphi Routines
     Chandra automatically registers native Delphi routines that are declared as
@@ -62,10 +62,10 @@
     Chandra supports only basic types and pointers for parameters and return
     values.
     - Supported types include:
-        - string
-        - float (single or double)
-        - Boolean
-        - pointer
+      - string
+      - float (single or double)
+      - Boolean
+      - pointer
     - When designing methods for Lua, ensure all parameters and return types
       use these supported types.
 
@@ -73,23 +73,222 @@
     Pointers created on the native (Delphi) side must be managed by native
     code.
     - For example:
-        - If you create a Delphi record and pass its pointer to Lua, Lua can
-          hold and reference the pointer.
-        - However, only native Delphi code can modify or operate on the
-          underlying data.
-        - If the pointer was dynamically allocated, it must be released on the
-          Delphi side.
+      - If you create a Delphi record and pass its pointer to Lua, Lua can
+        hold and reference the pointer.
+      - However, only native Delphi code can modify or operate on the
+        underlying data.
+      - If the pointer was dynamically allocated, it must be released on the
+        Delphi side.
 
-  5. Script commands/variables:
-     - Chandra.version   - Chandra version (string)
-     - Chandra.luaVerion - Lua version (string)
-     - dbg()             - Place in your Lua source to invokes the interactive
-                           debugger
+ 5. Script Commands/Variables:
+    - Chandra.version      - Chandra version (string)
+    - Chandra.luaVersion  - Lua version (string)
+    - dbg()               - Place in your Lua source to invoke the interactive
+                            debugger
 
-  6. Prerequisites
-     - Delphi 12.2 or higher
-     - Windows 10 or higher
-     - Tested on Windows 11 64-bit (23H2), Delphi 12.2
+ 6. Prerequisites
+    - Delphi 12.2 or higher
+    - Windows 10 or higher
+    - Tested on Windows 11 64-bit (23H2), Delphi 12.2
+
+ 7. Lua Garbage Collection (GC) Management
+    Effective memory management is crucial for maintaining optimal performance
+    in applications that embed Lua. Chandra provides a set of routines to
+    control and monitor Lua's garbage collector (GC) directly from Delphi.
+    Below are detailed explanations of these routines, including when and how
+    to use them.
+
+    7.1. SetGCStepSize(const AStep: Integer)
+         What It Does:
+           Sets the step multiplier for Lua's garbage collector. The step
+           multiplier determines the amount of work the GC performs in each
+           incremental step, influencing its aggressiveness.
+
+         When to Use It:
+           - Performance Optimization: Increase the step size to make GC
+             more aggressive if memory usage is high.
+           - Reducing Latency: Decrease the step size to spread GC workload,
+             minimizing pauses in performance-critical applications.
+           - Memory-Constrained Environments: Adjust step size to better manage
+             limited memory resources.
+
+         How to Use It:
+           // Example: Setting the GC step size to 200%
+           SetGCStepSize(200);
+
+         Parameters:
+           - AStep: A positive integer representing the GC step multiplier.
+                    Lua's default is typically around 200. Higher values make
+                    GC more aggressive.
+
+         Considerations:
+           - Balance: Too high a value may increase CPU usage, while too low
+             may lead to inadequate garbage collection.
+           - Testing: Experiment with different values to find the optimal
+             balance for your application.
+
+    7.2. GetGCStepSize(): Integer
+         What It Does:
+           Retrieves the current step multiplier value of Lua's garbage
+           collector, allowing you to monitor the GC's configuration.
+
+         When to Use It:
+           - Monitoring: Keep track of the current GC settings.
+           - Debugging: Diagnose memory-related issues by understanding GC
+             behavior.
+           - Dynamic Adjustments: Inform further adjustments based on runtime
+             conditions.
+
+         How to Use It:
+           var
+             CurrentStepSize: Integer;
+           begin
+             CurrentStepSize := GetGCStepSize();
+             ShowMessage('Current GC Step Size: ' + IntToStr(CurrentStepSize));
+           end;
+
+         Returns:
+           - An integer representing the current GC step multiplier.
+
+         Considerations:
+           - Regularly check to ensure GC is configured as intended, especially
+             in complex applications.
+
+    7.3. GetGCMemoryUsed(): Integer
+         What It Does:
+           Returns the amount of memory currently used by Lua's garbage
+           collector, measured in bytes.
+
+         When to Use It:
+           - Memory Monitoring: Track memory usage trends to identify leaks or
+             excessive consumption.
+           - Performance Tuning: Use memory usage data to adjust GC settings.
+           - Resource Management: Ensure memory usage stays within acceptable
+             limits in constrained environments.
+
+         How to Use It:
+           var
+             MemoryUsed: Integer;
+           begin
+             MemoryUsed := GetGCMemoryUsed();
+             ShowMessage('Lua GC Memory Used: ' + IntToStr(MemoryUsed) +
+              ' bytes');
+           end;
+
+         Returns:
+           - An integer representing the memory usage of Lua's GC in bytes.
+
+         Considerations:
+           - Combine memory data with GC step size and performance metrics for
+             informed memory management decisions.
+
+    7.4. CollectGarbage()
+         What It Does:
+           Initiates an immediate garbage collection cycle in Lua, forcing the
+           GC to reclaim memory from unused objects.
+
+         When to Use It:
+           - Explicit Memory Management: Trigger GC during moments when
+             temporary pauses are acceptable, such as after loading large
+             datasets.
+           - Resource Cleanup: Free up memory promptly after operations that
+             generate significant temporary objects.
+           - Manual Control: Supplement automated GC triggers to maintain
+             optimal performance.
+
+         How to Use It:
+           begin
+             CollectGarbage();
+             ShowMessage('Lua garbage collection cycle initiated.');
+           end;
+
+         Considerations:
+           - Performance Impact: Forcing GC can cause temporary pauses; use
+             judiciously to avoid negatively impacting user experience.
+           - Timing: Identify suitable application moments, like idle times, to
+             perform manual GC.
+           - Complementary Use: Combine manual GC with automated settings for
+             balanced memory management.
+
+    Detailed Guidance on Using Lua GC Management Routines
+
+    Overview of Lua's Garbage Collector
+      Lua's incremental garbage collector automatically manages memory by
+      reclaiming unused objects in small steps to prevent long pauses.
+      Adjusting the GC's behavior can optimize memory usage and application
+      responsiveness.
+
+    Best Practices and Considerations
+      1. Understand Lua's GC Mechanics:
+         - Familiarize yourself with Lua's incremental garbage collection to
+            make informed adjustments.
+
+      2. Avoid Overusing Manual GC Triggers:
+         - Excessive CollectGarbage calls can degrade performance. Use them
+           sparingly.
+
+      3. Monitor Application Performance:
+         - Assess the impact of GC adjustments on both memory usage and
+           responsiveness.
+
+      4. Test Across Scenarios:
+         - Different workloads may respond differently to GC settings. Conduct
+           thorough testing.
+
+      5. Handle GC States Appropriately:
+         - Ensure your application manages state changes introduced by garbage
+           collection, especially with weak references.
+
+      6. Stay Updated with Lua Versions:
+         - GC behavior may vary between Lua versions. Ensure compatibility with
+           the Lua version used by Chandra.
+
+    Example Usage in a Delphi Application
+      Below is a practical example demonstrating how to integrate and utilize
+      the GC management routines within a Delphi application interfacing with
+      Lua via Chandra.
+
+       uses
+        Chandra;
+
+       var
+         LuaState: PLua_State; // Assume this is initialized elsewhere
+
+     Usage Example:
+       procedure TForm1.ButtonOptimizeGCClick(Sender: TObject);
+       begin
+         try
+           // Set GC step size to 150%
+           SetGCStepSize(150);
+           ShowMessage('GC Step Size set to 150%.');
+
+           // Retrieve and display current step size
+           ShowMessage('Current GC Step Size: ' + IntToStr(GetGCStepSize()));
+
+           // Check memory usage
+           ShowMessage('Lua GC Memory Used: ' + IntToStr(GetGCMemoryUsed()) +
+             ' bytes');
+
+           // Force a garbage collection cycle
+           CollectGarbage();
+           ShowMessage('Garbage collection cycle initiated.');
+         except
+           on E: Exception do
+             ShowMessage('Error: ' + E.Message);
+         end;
+       end;
+
+  Additional Notes
+    - Lua Integration: Ensure that the Lua state (LuaState) is correctly
+      initialized and managed within your application.
+
+    - Error Handling: Implement robust error handling to manage scenarios where
+      GC operations might fail or behave unexpectedly.
+
+    - Performance Considerations: Adjusting the GC's step size can
+      significantly impact application performance and memory usage. Test
+      different configurations to identify the optimal settings for your use
+      case.
 
  ------------------------------------------------------------------------------
 
@@ -283,6 +482,11 @@ type
     /// Pointer to the Lua state.
     /// </summary>
     FState: Pointer;
+
+    /// <summary>
+    /// Garbage collection step.
+    /// </summary>
+    FGCStep: Integer;
 
     /// <summary>
     /// Registers a Delphi method with the Lua state.
@@ -735,6 +939,30 @@ type
     /// </code>
     /// </example>
     procedure OnAfterReset(); virtual;
+
+    /// <summary>
+    /// Sets the step size for Lua's garbage collector.
+    /// </summary>
+    /// <param name="AStep">The desired step size for garbage collection. Must be a positive integer.</param>
+    procedure SetGCStepSize(const AStep: Integer);
+
+    /// <summary>
+    /// Retrieves the current step size of Lua's garbage collector.
+    /// </summary>
+    /// <returns>The current garbage collection step size as an integer.</returns>
+    function GetGCStepSize(): Integer;
+
+    /// <summary>
+    /// Gets the amount of memory currently used by Lua's garbage collector.
+    /// </summary>
+    /// <returns>The memory usage of the garbage collector in bytes.</returns>
+    function GetGCMemoryUsed(): Integer;
+
+    /// <summary>
+    /// Initiates a garbage collection cycle in Lua to free up unused memory.
+    /// </summary>
+    procedure CollectGarbage();
+
   end;
 
 {$ENDREGION}
@@ -2552,6 +2780,8 @@ begin
   FState := luaL_newstate();
   if not Assigned(FState) then Exit;
 
+   SetGCStepSize(200);
+
   luaL_openlibs(FState);
 
   LoadBuffer(@cLOADER_LUA, Length(cLOADER_LUA));
@@ -3502,6 +3732,32 @@ end;
 procedure TChandra.OnAfterReset();
 begin
 end;
+
+procedure TChandra.SetGCStepSize(const AStep: Integer);
+begin
+  FGCStep := AStep;
+end;
+
+function TChandra.GetGCStepSize(): Integer;
+begin
+  Result := FGCStep;
+end;
+
+function TChandra.GetGCMemoryUsed(): Integer;
+begin
+  Result := 0;
+  if not Assigned(FState) then Exit;
+
+  Result := lua_gc(FState, LUA_GCCOUNT, FGCStep);
+end;
+
+procedure TChandra.CollectGarbage();
+begin
+  if not Assigned(FState) then Exit;
+
+  lua_gc(FState, LUA_GCSTEP, FGCStep);
+end;
+
 
 
 {$ENDREGION}
